@@ -1,5 +1,6 @@
 package com.zhupeng.location;
 
+import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.app.AlarmManager;
 import android.app.Notification;
@@ -12,6 +13,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.SystemClock;
 
@@ -28,12 +30,14 @@ import java.util.concurrent.TimeUnit;
  * 定时重复执行任务服务
  * 如果需要定制定时时间，请在调用startService/bindService时传入参数interval（单位毫秒），否则将会使用默认事件3秒
  */
+@SuppressLint("InvalidWakeLockTag")
 public class ScheduledExecuteService extends Service implements Runnable {
 
     private static final int NOTIFICATION_ID = 100;
     private static final String CHANNEL_ID = "ServiceNotificationChannel";
     public static final String EXTRA_INTERVAL = "interval";
     private static final long INTERVAL = 3 * 1000;
+    private static final String WAKE_LOCK_TAG = "ServiceWakeLockTag";
 
     //执行器
     private ScheduledExecutorService mExecutor;
@@ -43,6 +47,8 @@ public class ScheduledExecuteService extends Service implements Runnable {
     private Strategy mStrategy;
     //重复执行时间间隔
     private long mInterval = INTERVAL;
+    //防止手机进入休眠状态而导致程序不能正常运行
+    private PowerManager.WakeLock mWakeLock;
 
     @Override
     public void run() {
@@ -62,6 +68,15 @@ public class ScheduledExecuteService extends Service implements Runnable {
         if (null == mSysChangeListener) {
             mSysChangeListener = new SysChangeListener();
             mSysChangeListener.listen(this);
+        }
+
+        if (null == mWakeLock) {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG);
+        }
+
+        if (!mWakeLock.isHeld()) {
+            mWakeLock.acquire();
         }
 
         startAlarm();
@@ -163,6 +178,10 @@ public class ScheduledExecuteService extends Service implements Runnable {
 
         if (mStrategy != null) {
             mStrategy.finish(getApplicationContext());
+        }
+
+        if (mWakeLock != null) {
+            mWakeLock.release();
         }
         super.onDestroy();
     }
